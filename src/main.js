@@ -210,6 +210,7 @@ async function handleLogout() {
   DEALS = []; ACTIVITIES = []; OUTREACH = []; MEETINGS = [];
   CURRENT_USER = { id: null, email: null };
   REPORTS = [];
+  applyDefaultDatePreset(); // próxima sessão começa limpa, no mês vigente
   showDashboardPage();
   showState('empty');
   showLogin();
@@ -2454,10 +2455,10 @@ function setStatusFilter(status) {
   });
 
   const label = document.getElementById('date-filter-label');
-  if (status === 'won')       label.textContent = 'Ganho entre:';
-  else if (status === 'lost') label.textContent = 'Perdido entre:';
-  else if (status === 'open') label.textContent = 'Criado entre:';
-  else                         label.textContent = 'Data de referência entre:';
+  if (status === 'won')       label.textContent = 'Ganho em:';
+  else if (status === 'lost') label.textContent = 'Perdido em:';
+  else if (status === 'open') label.textContent = 'Criado em:';
+  else                         label.textContent = 'Data de referência:';
 
   const titles = {
     open: 'Negócios Abertos por Consultor',
@@ -2506,24 +2507,205 @@ function setFunilFilter() {
   updateKPIs();
 }
 
-// ─── Filtro de data ────────────────────────────────────────────────────────────
-function applyDateFilter() {
-  dateFrom = document.getElementById('date-from').value || null;
-  dateTo   = document.getElementById('date-to').value   || null;
+// ─── Filtro de data: dropdown de período estilo Pipedrive ────────────────────
+// activeDatePreset guarda qual opção do dropdown está selecionada. dateFrom/
+// dateTo continuam sendo a fonte da verdade usada por inDateRange/getFiltered/
+// rebuildNavCounts/loadData — o preset só é uma forma mais rápida de preenchê-los.
+let activeDatePreset = 'este_mes';
+
+const DATE_PRESET_LABELS = {
+  hoje: 'Hoje',
+  ontem: 'Ontem',
+  esta_semana: 'Esta semana',
+  semana_passada: 'Semana passada',
+  este_mes: 'Este mês',
+  mes_passado: 'Mês passado',
+  este_trimestre: 'Este trimestre',
+  este_ano: 'Este ano',
+  todo_periodo: 'Todo o período',
+  personalizado: 'Personalizado',
+};
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function dateToISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function isoToBR(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// Calcula {from, to} (strings ISO yyyy-mm-dd) para cada preset, sempre a
+// partir do instante real ("agora"), não de TODAY (que só é atualizado a
+// cada loadData() — aqui queremos sempre o dia corrente, mesmo antes do 1º load).
+function computePresetRange(key) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+
+  switch (key) {
+    case 'hoje': {
+      const t = new Date(y, m, d);
+      return { from: dateToISO(t), to: dateToISO(t) };
+    }
+    case 'ontem': {
+      const t = new Date(y, m, d - 1);
+      return { from: dateToISO(t), to: dateToISO(t) };
+    }
+    case 'esta_semana': {
+      const dow = now.getDay(); // 0=domingo
+      const diffToMonday = dow === 0 ? -6 : 1 - dow;
+      const monday = new Date(y, m, d + diffToMonday);
+      const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+      return { from: dateToISO(monday), to: dateToISO(sunday) };
+    }
+    case 'semana_passada': {
+      const dow = now.getDay();
+      const diffToMonday = dow === 0 ? -6 : 1 - dow;
+      const thisMonday = new Date(y, m, d + diffToMonday);
+      const lastMonday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() - 7);
+      const lastSunday = new Date(lastMonday.getFullYear(), lastMonday.getMonth(), lastMonday.getDate() + 6);
+      return { from: dateToISO(lastMonday), to: dateToISO(lastSunday) };
+    }
+    case 'este_mes': {
+      return { from: dateToISO(new Date(y, m, 1)), to: dateToISO(new Date(y, m + 1, 0)) };
+    }
+    case 'mes_passado': {
+      return { from: dateToISO(new Date(y, m - 1, 1)), to: dateToISO(new Date(y, m, 0)) };
+    }
+    case 'este_trimestre': {
+      const q = Math.floor(m / 3);
+      return { from: dateToISO(new Date(y, q * 3, 1)), to: dateToISO(new Date(y, q * 3 + 3, 0)) };
+    }
+    case 'este_ano': {
+      return { from: dateToISO(new Date(y, 0, 1)), to: dateToISO(new Date(y, 11, 31)) };
+    }
+    case 'todo_periodo':
+    default:
+      return { from: null, to: null };
+  }
+}
+
+function toggleDateDropdown() {
+  const panel = document.getElementById('date-filter-panel');
+  const trigger = document.getElementById('date-filter-trigger');
+  if (!panel || !trigger) return;
+  const open = panel.classList.toggle('open');
+  trigger.classList.toggle('open', open);
+}
+
+function closeDateDropdown() {
+  const panel = document.getElementById('date-filter-panel');
+  const trigger = document.getElementById('date-filter-trigger');
+  if (panel) panel.classList.remove('open');
+  if (trigger) trigger.classList.remove('open');
+}
+
+function updateActivePresetItem() {
+  document.querySelectorAll('.date-preset-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === activeDatePreset);
+  });
+}
+
+function updateDateTriggerLabel() {
+  const el = document.getElementById('date-filter-trigger-label');
+  if (!el) return;
+  if (activeDatePreset === 'personalizado') {
+    el.textContent = (dateFrom || dateTo)
+      ? `${isoToBR(dateFrom) || '…'} - ${isoToBR(dateTo) || '…'}`
+      : 'Personalizar período';
+  } else {
+    el.textContent = DATE_PRESET_LABELS[activeDatePreset] || 'Período';
+  }
+}
+
+// Usuário escolheu um item do dropdown. "personalizado" só abre o painel de
+// datas manuais (a aplicação de fato acontece em applyCustomDateRange, ao
+// clicar em "Aplicar período") — os demais presets aplicam e fecham na hora.
+function selectDatePreset(key) {
+  const customPanel = document.getElementById('date-custom-panel');
+  if (key === 'personalizado') {
+    activeDatePreset = 'personalizado';
+    updateActivePresetItem();
+    if (customPanel) customPanel.style.display = 'flex';
+    const cur = (dateFrom || dateTo) ? { from: dateFrom, to: dateTo } : computePresetRange('este_mes');
+    const fromEl = document.getElementById('date-from');
+    const toEl   = document.getElementById('date-to');
+    if (fromEl) fromEl.value = cur.from || '';
+    if (toEl)   toEl.value   = cur.to   || '';
+    updateDateTriggerLabel();
+    return;
+  }
+  if (customPanel) customPanel.style.display = 'none';
+  activeDatePreset = key;
+  const range = computePresetRange(key);
+  dateFrom = range.from;
+  dateTo   = range.to;
+  const fromEl = document.getElementById('date-from');
+  const toEl   = document.getElementById('date-to');
+  if (fromEl) fromEl.value = dateFrom || '';
+  if (toEl)   toEl.value   = dateTo   || '';
+  updateActivePresetItem();
+  updateDateTriggerLabel();
+  closeDateDropdown();
   renderAll();
   rebuildNavCounts();
   updateKPIs();
 }
 
-function clearDateFilter() {
-  dateFrom = null;
-  dateTo   = null;
-  document.getElementById('date-from').value = '';
-  document.getElementById('date-to').value   = '';
+// Confirma o período manual (painel "Personalizar período…").
+function applyCustomDateRange() {
+  dateFrom = document.getElementById('date-from').value || null;
+  dateTo   = document.getElementById('date-to').value   || null;
+  activeDatePreset = 'personalizado';
+  updateActivePresetItem();
+  updateDateTriggerLabel();
+  closeDateDropdown();
   renderAll();
   rebuildNavCounts();
   updateKPIs();
 }
+
+// Atualiza só o rótulo do botão enquanto o usuário ajusta as datas manuais —
+// a filtragem real só roda ao clicar em "Aplicar período" (evita re-renderizar
+// tudo a cada seleção parcial de data).
+function onCustomDateInputChange() {
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
+  const el = document.getElementById('date-filter-trigger-label');
+  if (el) el.textContent = (from || to) ? `${isoToBR(from) || '…'} - ${isoToBR(to) || '…'}` : 'Personalizar período';
+}
+
+// Garante que o mês vigente já vem selecionado por padrão sempre que o app
+// inicia — chamado antes do primeiro loadData() (afeta também o corte inicial
+// da busca de atividades) e novamente após logout, para a próxima sessão
+// começar limpa.
+function applyDefaultDatePreset() {
+  activeDatePreset = 'este_mes';
+  const range = computePresetRange('este_mes');
+  dateFrom = range.from;
+  dateTo   = range.to;
+  const fromEl = document.getElementById('date-from');
+  const toEl   = document.getElementById('date-to');
+  if (fromEl) fromEl.value = dateFrom || '';
+  if (toEl)   toEl.value   = dateTo   || '';
+  const customPanel = document.getElementById('date-custom-panel');
+  if (customPanel) customPanel.style.display = 'none';
+  updateActivePresetItem();
+  updateDateTriggerLabel();
+}
+
+// Mantidos por compatibilidade (nomes antigos usados em algum momento por
+// onchange/onclick) — agora apenas delegam para a lógica nova do dropdown.
+function applyDateFilter() { applyCustomDateRange(); }
+function clearDateFilter() { selectDatePreset('todo_periodo'); }
+
+// Fecha o dropdown ao clicar fora dele ou pressionar Esc.
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('date-filter-wrap');
+  if (wrap && !wrap.contains(e.target)) closeDateDropdown();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDateDropdown();
+});
 
 // ─── Recalcular contadores da nav conforme filtros ativos ─────────────────────
 function rebuildNavCounts() {
@@ -3264,6 +3446,11 @@ async function initPublicReportView(token) {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 (async function init() {
+  // Garante que o filtro de período já abre no mês vigente, antes de qualquer
+  // outra coisa — afeta tanto a tela quanto o primeiro loadData() (que usa
+  // dateFrom/dateTo para recortar a busca inicial de atividades).
+  applyDefaultDatePreset();
+
   // Relatório público via link compartilhado: ignora login e dashboard normal.
   const publicToken = new URLSearchParams(location.search).get('public_report');
   if (publicToken) {
@@ -3301,6 +3488,10 @@ window.setStatusFilter = setStatusFilter;
 window.setFunilFilter = setFunilFilter;
 window.applyDateFilter = applyDateFilter;
 window.clearDateFilter = clearDateFilter;
+window.toggleDateDropdown = toggleDateDropdown;
+window.selectDatePreset = selectDatePreset;
+window.applyCustomDateRange = applyCustomDateRange;
+window.onCustomDateInputChange = onCustomDateInputChange;
 window.openReportBuilder = openReportBuilder;
 window.onBuilderEntityChange = onBuilderEntityChange;
 window.onMeasureFieldChange = onMeasureFieldChange;
