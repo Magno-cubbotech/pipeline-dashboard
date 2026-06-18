@@ -287,6 +287,102 @@ async function fetchLastSyncInfo() {
   return data[0].finished_at;
 }
 
+async function fetchDashboardSnapshot() {
+  const { data, error } = await sb
+    .from('dashboard_snapshots')
+    .select('snapshot,generated_at,source_sync_run_id,source_finished_at')
+    .eq('scope', 'global')
+    .single();
+  if (error) throw new Error(`Cache indisponivel: ${error.message}`);
+  return data;
+}
+
+function normalizeCachedDeals(rows) {
+  return (rows || []).map(d => ({
+    ...d,
+    id: Number(d.id),
+    name: d.name || 'Sem titulo',
+    funil: d.funil || 'Sem funil',
+    closer: d.closer || 'Sem consultor',
+    creator: d.creator || '-',
+    acts: Number(d.acts) || 0,
+    stage: d.stage == null ? null : Number(d.stage),
+    status: d.status || 'open',
+    value: Number(d.value) || 0,
+    mrr: Number(d.mrr) || 0,
+    mrr_atual: Number(d.mrr_atual) || 0,
+    implantacao: Number(d.implantacao) || 0,
+    label_ids: Array.isArray(d.label_ids) ? d.label_ids : [],
+    is_special: false,
+  }));
+}
+
+function normalizeCachedActivities(rows) {
+  return (rows || []).map(a => ({
+    ...a,
+    id: Number(a.id),
+    deal_id: a.deal_id == null ? null : Number(a.deal_id),
+    done: !!a.done,
+  }));
+}
+
+function rebuildPeopleFromDeals() {
+  DEALS.forEach(d => {
+    d.is_special = !!(specialRole(d.closer) || specialRole(d.creator));
+  });
+
+  const regularSet = new Set(DEALS.filter(d => !specialRole(d.closer)).map(d => d.closer));
+  const regularNames = Array.from(regularSet).sort();
+  CLOSERS = regularNames.filter(c => ACTIVE_USER_NAMES.has(c));
+  INACTIVE_CLOSER_NAMES = regularNames.filter(c => !ACTIVE_USER_NAMES.has(c));
+
+  const specialSet = new Set(DEALS.filter(d => specialRole(d.closer)).map(d => d.closer));
+  SPECIAL_NAMES = Array.from(specialSet).sort();
+
+  CLOSER_COLORS = {};
+  [...CLOSERS, ...INACTIVE_CLOSER_NAMES, ...SPECIAL_NAMES].forEach((c, i) => {
+    CLOSER_COLORS[c] = COLOR_PALETTE[i % COLOR_PALETTE.length];
+  });
+}
+
+function updateLoadedMetadata(lastSync, sourceLabel) {
+  const ts = new Date(lastSync || Date.now()).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  document.getElementById('last-update').textContent = ts;
+  document.getElementById('footer-ts').textContent = ts;
+  document.getElementById('page-meta').textContent = lastSync
+    ? `Fonte: ${sourceLabel} (sincronizado a cada 15 min) · todos os status · ${DEALS.length} negocios carregados · ultima sincronizacao ${ts}`
+    : `Fonte: ${sourceLabel} · todos os status · ${DEALS.length} negocios carregados · sincronizacao ainda nao realizada`;
+}
+
+async function loadDashboardSnapshotData() {
+  setMsg('Lendo cache otimizado do dashboard...');
+  const row = await fetchDashboardSnapshot();
+  const snapshot = row?.snapshot || {};
+  if (!Array.isArray(snapshot.deals) || snapshot.deals.length === 0) return false;
+
+  STAGES = snapshot.stages || {};
+  ACTIVE_USER_NAMES = new Set(snapshot.active_user_names || []);
+  DEALS = normalizeCachedDeals(snapshot.deals);
+  ACTIVITIES = normalizeCachedActivities(snapshot.activities);
+  MEETINGS = normalizeCachedActivities(snapshot.meetings);
+  OUTREACH = normalizeCachedActivities(snapshot.outreach);
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  OUTREACH_FROM = dateFrom || (todayISO.slice(0, 8) + '01');
+  OUTREACH_TO = dateTo || todayISO;
+
+  rebuildPeopleFromDeals();
+  buildNav();
+  rebuildNavCounts();
+  updateKPIs();
+  updateLoadedMetadata(snapshot.last_successful_sync || row.source_finished_at || row.generated_at, 'Supabase cache');
+
+  showState('data');
+  renderAll();
+  setConnDot('ok');
+  return true;
+}
+
 function mapActivity(a, userMap) {
   const closerId = typeof a.user_id === 'object' ? a.user_id?.value : a.user_id;
   const sdrId     = typeof a.created_by_user_id === 'object' ? a.created_by_user_id?.value : a.created_by_user_id;
@@ -430,6 +526,14 @@ async function loadData() {
   TODAY = new Date(); // atualiza data de referência a cada load
 
   try {
+    try {
+      const loadedFromSnapshot = await loadDashboardSnapshotData();
+      if (loadedFromSnapshot) return;
+    } catch (cacheErr) {
+      console.warn('Falha ao ler dashboard_snapshots; usando carga bruta.', cacheErr);
+      setMsg('Cache indisponivel. Lendo tabelas brutas...');
+    }
+
     // Pipelines, etapas, usuários e negócios não dependem uns dos outros para
     // SEREM LIDOS (só para serem mapeados depois) — disparar tudo em paralelo
     // reduz o tempo total de carregamento em vez de esperar cada um por vez.
