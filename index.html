@@ -130,11 +130,34 @@
       <option value="SITTAX ST">SITTAX ST</option>
     </select>
 
-    <span id="date-filter-label" style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-left:14px;">Data de referência entre:</span>
-    <input type="date" class="search-input" id="date-from" style="width:130px;" onchange="applyDateFilter()" title="Filtra os negócios já carregados. Clique em Atualizar depois para também aplicar este período direto na busca de atividades (carregamento mais rápido).">
-    <span style="color:var(--text3);font-size:11px;">e</span>
-    <input type="date" class="search-input" id="date-to" style="width:130px;" onchange="applyDateFilter()" title="Filtra os negócios já carregados. Clique em Atualizar depois para também aplicar este período direto na busca de atividades (carregamento mais rápido).">
-    <button class="filter-btn" id="btn-clear-date" onclick="clearDateFilter()">✕ Limpar data</button>
+    <span id="date-filter-label" style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-left:14px;">Data de referência:</span>
+    <div class="date-filter-wrap" id="date-filter-wrap">
+      <button type="button" class="date-filter-trigger" id="date-filter-trigger" onclick="toggleDateDropdown()" title="Selecione um período pré-definido ou personalize as datas">
+        <span id="date-filter-trigger-label">Este mês</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="date-filter-panel" id="date-filter-panel">
+        <button type="button" class="date-preset-item" data-preset="hoje" onclick="selectDatePreset('hoje')">Hoje</button>
+        <button type="button" class="date-preset-item" data-preset="ontem" onclick="selectDatePreset('ontem')">Ontem</button>
+        <button type="button" class="date-preset-item" data-preset="esta_semana" onclick="selectDatePreset('esta_semana')">Esta semana</button>
+        <button type="button" class="date-preset-item" data-preset="semana_passada" onclick="selectDatePreset('semana_passada')">Semana passada</button>
+        <button type="button" class="date-preset-item active" data-preset="este_mes" onclick="selectDatePreset('este_mes')">Este mês</button>
+        <button type="button" class="date-preset-item" data-preset="mes_passado" onclick="selectDatePreset('mes_passado')">Mês passado</button>
+        <button type="button" class="date-preset-item" data-preset="este_trimestre" onclick="selectDatePreset('este_trimestre')">Este trimestre</button>
+        <button type="button" class="date-preset-item" data-preset="este_ano" onclick="selectDatePreset('este_ano')">Este ano</button>
+        <div class="date-preset-divider"></div>
+        <button type="button" class="date-preset-item" data-preset="todo_periodo" onclick="selectDatePreset('todo_periodo')">Todo o período</button>
+        <button type="button" class="date-preset-item" data-preset="personalizado" onclick="selectDatePreset('personalizado')">Personalizar período…</button>
+        <div class="date-custom-panel" id="date-custom-panel" style="display:none;">
+          <div class="date-custom-row">
+            <input type="date" class="search-input" id="date-from" onchange="onCustomDateInputChange()" title="Data inicial">
+            <span style="color:var(--text3);font-size:11px;">até</span>
+            <input type="date" class="search-input" id="date-to" onchange="onCustomDateInputChange()" title="Data final">
+          </div>
+          <button type="button" class="btn-apply-date" onclick="applyCustomDateRange()">Aplicar período</button>
+        </div>
+      </div>
+    </div>
   </div>
 
 
