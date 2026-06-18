@@ -166,6 +166,25 @@
   .filter-btn { padding: 5px 12px; border-radius: 6px; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text3); cursor: pointer; font-size: 11px; transition: all 0.12s; }
   .filter-btn.on { background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.4); color: var(--amber); }
 
+  /* Dropdown de período (estilo Pipedrive) */
+  .date-filter-wrap { position: relative; display: inline-flex; align-items: center; }
+  .date-filter-trigger { display:inline-flex; align-items:center; gap:7px; padding: 5px 12px; border-radius: 6px; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text); cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.12s; }
+  .date-filter-trigger:hover { border-color: var(--accent); }
+  .date-filter-trigger.open { border-color: var(--accent); background: var(--bg3); }
+  .date-filter-trigger .chev { font-size: 9px; color: var(--text3); transition: transform 0.12s; }
+  .date-filter-trigger.open .chev { transform: rotate(180deg); }
+  .date-filter-panel { display:none; position:absolute; top: calc(100% + 6px); left: 0; min-width: 220px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,0.45); padding: 6px; z-index: 500; }
+  .date-filter-panel.open { display:block; }
+  .date-preset-item { display:block; width:100%; text-align:left; background:none; border:none; color: var(--text2); font-size: 12px; padding: 7px 10px; border-radius: 5px; cursor:pointer; transition: background 0.1s; font-family: inherit; }
+  .date-preset-item:hover { background: var(--bg3); color: var(--text); }
+  .date-preset-item.active { background: rgba(99,102,241,0.15); color: var(--accent2); font-weight: 600; }
+  .date-preset-divider { border-top: 0.5px solid var(--border); margin: 6px 2px; }
+  .date-custom-panel { padding: 8px 6px 4px; display:flex; flex-direction:column; gap:8px; border-top: 0.5px solid var(--border); margin-top: 4px; }
+  .date-custom-row { display:flex; align-items:center; gap:6px; }
+  .date-custom-row .search-input { width: 112px; padding: 5px 8px; font-size: 11px; }
+  .btn-apply-date { background: rgba(99,102,241,0.18); border: 0.5px solid var(--accent); color: var(--accent2); border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.12s; font-family: inherit; }
+  .btn-apply-date:hover { background: rgba(99,102,241,0.28); }
+
   /* Ranking de conversão */
   .ranking-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .ranking-title { font-size:13px; font-weight:600; color:var(--text); }
